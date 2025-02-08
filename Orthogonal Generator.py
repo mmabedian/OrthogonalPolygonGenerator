@@ -1,7 +1,7 @@
 import random
 import matplotlib.pyplot as plt
 import numpy as np
-
+from shapely.geometry import Polygon, LineString
 
 def sign(x):
     if x > 0:
@@ -241,3 +241,159 @@ def merge_edges(edges):
 #print(sides)
 print("merge", merge_edges(sides))
 real_edges = merge_edges(sides)
+
+
+def find_reflex_vertices(polygon):
+    """Find reflex vertices (interior angle > 180 degrees) in a polygon."""
+    vertices = list(polygon.exterior.coords)[:-1]  # Remove duplicate last point
+    print(vertices)
+    reflex_vertices = []
+
+    for i in range(len(vertices)):
+        prev_pt = np.array(vertices[i - 1])
+        curr_pt = np.array(vertices[i])
+        next_pt = np.array(vertices[(i + 1) % len(vertices)])
+
+        v1 = prev_pt - curr_pt
+        v2 = next_pt - curr_pt
+        v1 = np.array([v1[0], v1[1], 0])  # تبدیل به بردار سه‌بعدی
+        v2 = np.array([v2[0], v2[1], 0])  # تبدیل به بردار سه‌بعدی
+        cross_product = np.cross(v1, v2)
+
+        cross_product = np.cross(v1, v2)[2]
+        if cross_product > 0:  # Reflex if cross product is positive
+            reflex_vertices.append(tuple(curr_pt))
+
+    return reflex_vertices
+
+
+def extend_edges(polygon, reflex_vertices):
+    """Extend edges at reflex vertices to form bounding rectangles."""
+    extended_lines = []
+
+    for rv in reflex_vertices:
+        x, y = rv
+
+        # Extend horizontally left and right
+        left_intersection = None
+        right_intersection = None
+
+        for edge in polygon.exterior.coords:
+            line = LineString([edge, polygon.exterior.coords[
+                (list(polygon.exterior.coords).index(edge) + 1) % len(polygon.exterior.coords)]])
+
+            if line.intersects(LineString([(x, y - 1000), (x, y + 1000)])):
+                intersection = line.intersection(LineString([(x, y - 1000), (x, y + 1000)]))
+                if intersection.geom_type == 'Point':
+                    if intersection.x < x:
+                        left_intersection = intersection
+                    elif intersection.x > x:
+                        right_intersection = intersection
+
+        if left_intersection and right_intersection:
+            extended_lines.append((left_intersection, right_intersection))
+
+    return extended_lines
+
+
+def divide_into_rectangles(polygon, extended_lines):
+    """Divide the polygon into rectangles using extended lines."""
+    rectangles = []
+    # Implementation of the splitting logic
+    return rectangles
+
+# print(border_vertices)
+#
+# polygon = Polygon(border_vertices)
+#
+# # Process polygon
+# reflex_vertices = find_reflex_vertices(polygon)
+# print("reflex vertices", reflex_vertices)
+# extended_lines = extend_edges(polygon, reflex_vertices)
+# rectangles = divide_into_rectangles(polygon, extended_lines)
+#
+# print("Rectangles:", rectangles)
+from collections import defaultdict
+
+
+def sort_polygon_edges(sides):
+    # ساخت گراف اتصالات رأس‌ها
+    graph = defaultdict(list)
+    for (x1, y1), (x2, y2) in sides:
+        graph[(x1, y1)].append((x2, y2))
+        graph[(x2, y2)].append((x1, y1))
+
+    # یافتن یک رأس شروع (کوچکترین نقطه بر اساس y سپس x)
+    start = min(graph.keys())
+
+    # بازسازی ترتیب اضلاع با DFS
+    sorted_sides = []
+    visited = set()
+    current = start
+    prev = None
+
+    while len(visited) < len(sides):
+        visited.add(current)
+        neighbors = sorted(graph[current], key=lambda p: (p[1], p[0]))  # مرتب‌سازی بر اساس y و سپس x
+
+        # انتخاب همسایه بعدی که قبلاً بازدید نشده باشد
+        next_vertex = None
+        for neighbor in neighbors:
+            if neighbor != prev:  # جلوگیری از حرکت به عقب
+                next_vertex = neighbor
+                break
+
+        if next_vertex is None:
+            break  # پایان در صورت بسته بودن چندضلعی
+
+        sorted_sides.append((current, next_vertex))
+        prev, current = current, next_vertex
+
+    return sorted_sides
+
+print(sort_polygon_edges(real_edges))
+sorted_sides = sort_polygon_edges(real_edges)
+
+
+def find_reflex_vertices(sides):
+    def turn_direction(o, a, b):
+        """ محاسبه جهت چرخش از بردار OA به OB """
+        (ox, oy), (ax, ay), (bx, by) = o, a, b
+        dx1, dy1 = ax - ox, ay - oy
+        dx2, dy2 = bx - ax, by - ay
+        return dx1 * dy2 - dy1 * dx2  # تعیین جهت چرخش
+
+    vertices = [sides[0][0]] + [edge[1] for edge in sides]  # استخراج ترتیب رأس‌ها
+    reflex_vertices = []
+
+    for i in range(len(vertices)):
+        prev, current, next_vertex = vertices[i - 1], vertices[i], vertices[(i + 1) % len(vertices)]
+        if turn_direction(prev, current, next_vertex) < 0:  # اگر چرخش به راست باشد (زاویه داخلی ۲۷۰ درجه)
+            reflex_vertices.append(current)
+
+    return reflex_vertices
+
+reflex_vertices = find_reflex_vertices(sorted_sides)
+print("Reflex Vertices:", reflex_vertices)
+
+
+def plot_polygon_with_reflex(sides, reflex_vertices):
+    plt.figure(figsize=(12, 12))
+    for side in sides:
+        (x1, y1), (x2, y2) = side
+        plt.plot([y1, y2], [x1, x2], linewidth=3, color="blue")  # خطوط چندضلعی
+
+    # رسم رأس‌های رفلکس
+    for x, y in reflex_vertices:
+        plt.scatter(y, x, color='red', s=100, zorder=3,
+                    label='Reflex Vertex' if 'Reflex Vertex' not in plt.gca().get_legend_handles_labels()[1] else "")
+
+    plt.legend()
+    plt.gca().set_aspect('equal', adjustable='box')
+    plt.title("Polygon with Reflex Vertices")
+    plt.grid(which='both', color='lightblue', linestyle='--', linewidth=1.5)
+    plt.show()
+
+
+# رسم چندضلعی همراه با رأس‌های رفلکس
+plot_polygon_with_reflex(sorted_sides, reflex_vertices)
