@@ -178,7 +178,7 @@ for side in sides:
 xMin, xMax, yMin, yMax = borders()
 a = min(xMin, yMin)
 b = max(xMax, yMax)
-
+print(np.array(squares)[xMin:xMax, yMin:yMax])
 plt.yticks(ticks=range(xMin, xMax + 2), labels=range(xMin, xMax + 2))
 plt.xticks(ticks=range(yMin, yMax + 2), labels=range(yMin, yMax + 2))
 plt.grid(which='both', color='lightblue', linestyle='--', linewidth=1.5)
@@ -190,3 +190,54 @@ plt.gca().set_aspect('equal', adjustable='box')
 plt.title("Grid with Border Sides and Vertices")
 plt.show()
 
+def merge_edges(edges):
+    from collections import defaultdict
+
+    # Sort edges for consistency
+    edges = sorted(edges)
+
+    # Group edges by orientation (horizontal or vertical)
+    horizontal = defaultdict(list)
+    vertical = defaultdict(list)
+
+    for (x1, y1), (x2, y2) in edges:
+        if x1 == x2:  # Vertical edge
+            vertical[x1].append((min(y1, y2), max(y1, y2)))
+        else:  # Horizontal edge
+            horizontal[y1].append((min(x1, x2), max(x1, x2)))
+
+    def merge_ranges(ranges):
+        ranges.sort()
+        merged = []
+        start, end = ranges[0]
+
+        for s, e in ranges[1:]:
+            if s <= end:  # Overlapping or adjacent
+                end = max(end, e)
+            else:
+                merged.append((start, end))
+                start, end = s, e
+        merged.append((start, end))
+
+        return merged
+
+    # Merge adjacent ranges
+    for key in horizontal:
+        horizontal[key] = merge_ranges(horizontal[key])
+    for key in vertical:
+        vertical[key] = merge_ranges(vertical[key])
+
+    # Convert back to edge list
+    merged_edges = []
+    for y, ranges in horizontal.items():
+        for x1, x2 in ranges:
+            merged_edges.append(((x1, y), (x2, y)))
+    for x, ranges in vertical.items():
+        for y1, y2 in ranges:
+            merged_edges.append(((x, y1), (x, y2)))
+
+    return merged_edges
+
+#print(sides)
+print("merge", merge_edges(sides))
+real_edges = merge_edges(sides)
