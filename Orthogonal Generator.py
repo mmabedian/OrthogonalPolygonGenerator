@@ -243,76 +243,6 @@ print("merge", merge_edges(sides))
 real_edges = merge_edges(sides)
 
 
-def find_reflex_vertices(polygon):
-    """Find reflex vertices (interior angle > 180 degrees) in a polygon."""
-    vertices = list(polygon.exterior.coords)[:-1]  # Remove duplicate last point
-    print(vertices)
-    reflex_vertices = []
-
-    for i in range(len(vertices)):
-        prev_pt = np.array(vertices[i - 1])
-        curr_pt = np.array(vertices[i])
-        next_pt = np.array(vertices[(i + 1) % len(vertices)])
-
-        v1 = prev_pt - curr_pt
-        v2 = next_pt - curr_pt
-        v1 = np.array([v1[0], v1[1], 0])  # تبدیل به بردار سه‌بعدی
-        v2 = np.array([v2[0], v2[1], 0])  # تبدیل به بردار سه‌بعدی
-        cross_product = np.cross(v1, v2)
-
-        cross_product = np.cross(v1, v2)[2]
-        if cross_product > 0:  # Reflex if cross product is positive
-            reflex_vertices.append(tuple(curr_pt))
-
-    return reflex_vertices
-
-
-def extend_edges(polygon, reflex_vertices):
-    """Extend edges at reflex vertices to form bounding rectangles."""
-    extended_lines = []
-
-    for rv in reflex_vertices:
-        x, y = rv
-
-        # Extend horizontally left and right
-        left_intersection = None
-        right_intersection = None
-
-        for edge in polygon.exterior.coords:
-            line = LineString([edge, polygon.exterior.coords[
-                (list(polygon.exterior.coords).index(edge) + 1) % len(polygon.exterior.coords)]])
-
-            if line.intersects(LineString([(x, y - 1000), (x, y + 1000)])):
-                intersection = line.intersection(LineString([(x, y - 1000), (x, y + 1000)]))
-                if intersection.geom_type == 'Point':
-                    if intersection.x < x:
-                        left_intersection = intersection
-                    elif intersection.x > x:
-                        right_intersection = intersection
-
-        if left_intersection and right_intersection:
-            extended_lines.append((left_intersection, right_intersection))
-
-    return extended_lines
-
-
-def divide_into_rectangles(polygon, extended_lines):
-    """Divide the polygon into rectangles using extended lines."""
-    rectangles = []
-    # Implementation of the splitting logic
-    return rectangles
-
-# print(border_vertices)
-#
-# polygon = Polygon(border_vertices)
-#
-# # Process polygon
-# reflex_vertices = find_reflex_vertices(polygon)
-# print("reflex vertices", reflex_vertices)
-# extended_lines = extend_edges(polygon, reflex_vertices)
-# rectangles = divide_into_rectangles(polygon, extended_lines)
-#
-# print("Rectangles:", rectangles)
 from collections import defaultdict
 
 
@@ -397,3 +327,103 @@ def plot_polygon_with_reflex(sides, reflex_vertices):
 
 # رسم چندضلعی همراه با رأس‌های رفلکس
 plot_polygon_with_reflex(sorted_sides, reflex_vertices)
+
+
+def separate_vertical_horizontal(sides):
+    vertical_sides = []
+    horizontal_sides = []
+    for (x1, y1), (x2, y2) in sides:
+        if x1 == x2:
+            vertical_sides.append(((x1, y1), (x2, y2)))
+        elif y1 == y2:
+            horizontal_sides.append(((x1, y1), (x2, y2)))
+
+    vertical_sides.sort(key=lambda side: (side[0][0], side[0][1]))
+    horizontal_sides.sort(key=lambda side: (side[0][1], side[0][0]))
+
+    return vertical_sides, horizontal_sides
+
+
+def find_direction_of_vertex(vertex, vertical_sides, horizontal_sides):
+    x, y = vertex
+    dirx = 0
+    diry = 0
+    for (x1, y1), (x2, y2) in vertical_sides:
+        if x1 == x:
+            if y1 == y or y2 == y:
+                diry = y1 - y2
+    for (x1, y1), (x2, y2) in horizontal_sides:
+        if y1 == y:
+            if x1 == x or x2 == x:
+                dirx = x2 - x1
+    dirx, diry = sign(dirx), sign(diry)
+    if dirx * diry > 0:
+        return dirx, diry
+    else:
+        return diry, dirx
+
+
+def extend_reflex_lines(reflex_vertices, vertical_sides, horizontal_sides):
+    extension_lines = []
+
+    for rx, ry in reflex_vertices:
+        # Extend horizontally (leftward)
+        dirx, diry = find_direction_of_vertex((rx, ry), vertical_sides, horizontal_sides)
+        print("Reflex vertex: ", (rx, ry), dirx, diry)
+        if diry > 0:
+            for (x1, y1), (x2, y2) in horizontal_sides:
+                a, b = min(x1, x2), max(x1, x2)
+                print("Coor", ((x1, y1), (x2, y2)), "y1 > ry", y1 > ry, "x1 <= rx <= x2", x1 <= rx <= x2)
+                if y1 > ry and a <= rx <= b:
+                    extension_lines.append(((rx, ry), (rx, y1)))
+                    break
+        else:
+            for (x1, y1), (x2, y2) in horizontal_sides[::-1]:
+                a, b = min(x1, x2), max(x1, x2)
+                print("Coor", ((x1, y1), (x2, y2)), "y1 < ry", y1 < ry, "x1 <= rx <= x2", x1 <= rx <= x2)
+                if y1 < ry and a <= rx <= b:
+                    extension_lines.append(((rx, ry), (rx, y1)))
+                    break
+
+        if dirx > 0:
+            for (x1, y1), (x2, y2) in vertical_sides:
+                a, b = min(y1, y2), max(y1, y2)
+                if x1 > rx and a <= ry <= b:
+                    extension_lines.append(((rx, ry), (x1, ry)))
+                    break
+        else:
+            for (x1, y1), (x2, y2) in vertical_sides[::-1]:
+                a, b = min(y1, y2), max(y1, y2)
+                if x1 < rx and a <= ry <= b:
+                    extension_lines.append(((rx, ry), (x1, ry)))
+                    break
+    return extension_lines
+
+
+def plot_polygon_with_reflex_and_extensions(sides, reflex_vertices, extension_lines):
+    plt.figure(figsize=(12, 12))
+    for side in sides:
+        (x1, y1), (x2, y2) = side
+        plt.plot([x1, x2], [y1, y2], linewidth=3, color="blue")
+
+    for x, y in reflex_vertices:
+        plt.scatter(x, y, color='red', s=100, zorder=3,
+                    label='Reflex Vertex' if 'Reflex Vertex' not in plt.gca().get_legend_handles_labels()[1] else "")
+
+    for (x1, y1), (x2, y2) in extension_lines:
+        plt.plot([x1, x2], [y1, y2],  linestyle='dashed', color='green', linewidth=2,
+                 label='Extension' if 'Extension' not in plt.gca().get_legend_handles_labels()[1] else "")
+
+    plt.legend()
+    plt.gca().set_aspect('equal', adjustable='box')
+    plt.title("Polygon with Reflex Vertices and Extensions")
+    plt.grid(which='both', color='lightblue', linestyle='--', linewidth=1.5)
+    plt.show()
+
+vertical_sides, horizontal_sides = separate_vertical_horizontal(sorted_sides)
+extension_lines = extend_reflex_lines(reflex_vertices, vertical_sides, horizontal_sides)
+print("Extension Lines:", extension_lines)
+print("Vertical Sides:", vertical_sides)
+print("Horizontal Sides:", horizontal_sides)
+plot_polygon_with_reflex_and_extensions(sorted_sides, reflex_vertices, extension_lines)
+
