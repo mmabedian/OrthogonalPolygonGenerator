@@ -1,7 +1,19 @@
 import random
 import matplotlib.pyplot as plt
 import numpy as np
+from jupyter_server.config_manager import remove_defaults
 from shapely.geometry import Polygon, LineString
+
+
+class Rectangle:
+    def __init__(self, x1, y1, x2, y2):
+        self.x1 = min(x1, x2)
+        self.y1 = min(y1, y2)
+        self.x2 = max(x1, x2)
+        self.y2 = max(y1, y2)
+
+    def __repr__(self):
+        return f"Rectangle(({self.x1}, {self.y1}), ({self.x2}, {self.y2}))"
 
 def sign(x):
     if x > 0:
@@ -373,14 +385,14 @@ def extend_reflex_lines(reflex_vertices, vertical_sides, horizontal_sides):
         if diry > 0:
             for (x1, y1), (x2, y2) in horizontal_sides:
                 a, b = min(x1, x2), max(x1, x2)
-                print("Coor", ((x1, y1), (x2, y2)), "y1 > ry", y1 > ry, "x1 <= rx <= x2", x1 <= rx <= x2)
+                #print("Coor", ((x1, y1), (x2, y2)), "y1 > ry", y1 > ry, "x1 <= rx <= x2", x1 <= rx <= x2)
                 if y1 > ry and a <= rx <= b:
                     extension_lines.append(((rx, ry), (rx, y1)))
                     break
         else:
             for (x1, y1), (x2, y2) in horizontal_sides[::-1]:
                 a, b = min(x1, x2), max(x1, x2)
-                print("Coor", ((x1, y1), (x2, y2)), "y1 < ry", y1 < ry, "x1 <= rx <= x2", x1 <= rx <= x2)
+                #print("Coor", ((x1, y1), (x2, y2)), "y1 < ry", y1 < ry, "x1 <= rx <= x2", x1 <= rx <= x2)
                 if y1 < ry and a <= rx <= b:
                     extension_lines.append(((rx, ry), (rx, y1)))
                     break
@@ -420,10 +432,170 @@ def plot_polygon_with_reflex_and_extensions(sides, reflex_vertices, extension_li
     plt.grid(which='both', color='lightblue', linestyle='--', linewidth=1.5)
     plt.show()
 
+def remove_duplicate_lines(lines):
+    unique_lines = set()
+    for line in lines:
+        sorted_line = tuple(sorted(line))
+        unique_lines.add(sorted_line)
+    return list(unique_lines)
+
+
+def generate_rectangles(sides, vertical_lines, horizontal_lines, reflex_vertices):
+    lx1, ly1, lx2, ly2 = 0, 0, 0, 0
+    hx, hy, vx, vy = 0, 0, 0, 0
+    vSides, hSides = separate_vertical_horizontal(sides)
+    rectangles = []
+    for rx, ry in reflex_vertices:
+        # Extend horizontally (leftward)
+        dirx, diry = find_direction_of_vertex((rx, ry), vSides, hSides)
+        print("Reflex vertexxx: ", (rx, ry), dirx, diry)
+        if diry > 0:
+            for (x1, y1), (x2, y2) in horizontal_lines:
+                a, b = min(x1, x2), max(x1, x2)
+                #print("Coor", ((x1, y1), (x2, y2)), "y1 > ry", y1 > ry, "x1 <= rx <= x2", x1 <= rx <= x2)
+                if y1 > ry and a <= rx <= b:
+                    lx1, ly1 = rx, y1
+                    break
+        else:
+            for (x1, y1), (x2, y2) in horizontal_lines[::-1]:
+                a, b = min(x1, x2), max(x1, x2)
+                #print("Coor", ((x1, y1), (x2, y2)), "y1 < ry", y1 < ry, "x1 <= rx <= x2", x1 <= rx <= x2)
+                if y1 < ry and a <= rx <= b:
+                    lx1, ly1 = rx, y1
+                    break
+
+        if dirx > 0:
+            for (x1, y1), (x2, y2) in vertical_lines:
+                a, b = min(y1, y2), max(y1, y2)
+                if x1 > rx and a <= ry <= b:
+                    lx2, ly2 = x1, ry
+                    break
+        else:
+            for (x1, y1), (x2, y2) in vertical_lines[::-1]:
+                a, b = min(y1, y2), max(y1, y2)
+                if x1 < rx and a <= ry <= b:
+                    lx2, ly2 = x1, ry
+                    break
+        for (x1, y1), (x2, y2) in hSides:
+            if x1 == rx and y1 == ry:
+                hx, hy = x2, y2
+                break
+            elif x2 == rx and y2 == ry:
+                hx, hy = x1, y1
+                break
+        for (x1, y1), (x2, y2) in vSides:
+            if x1 == rx and y1 == ry:
+                vx, vy = x2, y2
+                break
+            elif x2 == rx and y2 == ry:
+                vx, vy = x1, y1
+                break
+        rect1 = Rectangle(rx, ry, lx2, ly1)
+        rect2 = Rectangle(rx, ry, lx2, vy)
+        rect3 = Rectangle(rx, ry, hx, ly1)
+        rectangles.append(rect1)
+        rectangles.append(rect2)
+        rectangles.append(rect3)
+        print("Reflex vertexxx: ", (rx, ry), "Direction", dirx, diry, "v1", (lx1, ly1), (lx2, ly2), (hx, hy), (vx, vy))
+    return rectangles
+
+def find_intersections(vertical_lines, horizontal_lines):
+    intersections = []
+    for (vx, vy1), (_, vy2) in vertical_lines:
+        for (hx1, hy), (hx2, _) in horizontal_lines:
+            if hx1 < vx < hx2 and vy1 < hy < vy2:
+                intersections.append((vx, hy))
+    return intersections
+
+
+def plot_polygon_with_rectangles(sides, reflex_vertices, extension_lines, rectangles):
+    plt.figure(figsize=(12, 12))
+    for side in sides:
+        (x1, y1), (x2, y2) = side
+        plt.plot([y1, y2], [x1, x2], linewidth=3, color="blue")
+
+    # for x, y in reflex_vertices:
+    #     plt.scatter(y, x, color='red', s=100, zorder=3,
+    #                 label='Reflex Vertex' if 'Reflex Vertex' not in plt.gca().get_legend_handles_labels()[1] else "")
+
+    # for (x1, y1), (x2, y2) in extension_lines:
+    #     plt.plot([y1, y2], [x1, x2], linestyle='dashed', color='green', linewidth=2,
+    #              label='Extension' if 'Extension' not in plt.gca().get_legend_handles_labels()[1] else "")
+
+    for rect in rectangles:
+        color = [random.random() for _ in range(3)]
+        square = patches.Rectangle((rect.y1, rect.x1), rect.y2 - rect.y1, rect.x2 - rect.x1, linewidth=1,
+                                   edgecolor='black', facecolor=color, alpha=0.5)
+        plt.gca().add_patch(square)
+
+    plt.legend()
+    plt.gca().set_aspect('equal', adjustable='box')
+    plt.title("Polygon with Reflex Vertices, Extensions, and Rectangles")
+    plt.grid(which='both', color='lightblue', linestyle='--', linewidth=1.5)
+    plt.show()
+
+def middle_rectangles(vertices, vertical_lines, horizontal_lines):
+    rectangles = []
+    upX, upY = 0, 0
+    downX, downY = 0, 0
+    rightX, rightY = 0, 0
+    leftX, leftY = 0, 0
+    for rx, ry in vertices:
+        for (x1, y1), (x2, y2) in horizontal_lines:
+            a, b = min(x1, x2), max(x1, x2)
+            # print("Coor", ((x1, y1), (x2, y2)), "y1 > ry", y1 > ry, "x1 <= rx <= x2", x1 <= rx <= x2)
+            if y1 > ry and a <= rx <= b:
+                upX, upY = rx, y1
+                break
+        for (x1, y1), (x2, y2) in horizontal_lines[::-1]:
+            a, b = min(x1, x2), max(x1, x2)
+            # print("Coor", ((x1, y1), (x2, y2)), "y1 < ry", y1 < ry, "x1 <= rx <= x2", x1 <= rx <= x2)
+            if y1 < ry and a <= rx <= b:
+                downX, downY = rx, y1
+                break
+        for (x1, y1), (x2, y2) in vertical_lines:
+            a, b = min(y1, y2), max(y1, y2)
+            if x1 > rx and a <= ry <= b:
+                rightX, rightY = x1, ry
+                break
+        for (x1, y1), (x2, y2) in vertical_lines[::-1]:
+            a, b = min(y1, y2), max(y1, y2)
+            if x1 < rx and a <= ry <= b:
+                leftX, leftY = x1, ry
+                break
+        rect1 = Rectangle(rx, ry, leftX, downY)
+        rect2 = Rectangle(rx, ry, rightX, downY)
+        rect3 = Rectangle(rx, ry, leftX, upY)
+        rect4 = Rectangle(rx, ry, rightX, upY)
+        rectangles.append(rect1)
+        rectangles.append(rect2)
+        rectangles.append(rect3)
+        rectangles.append(rect4)
+    return rectangles
+
+def remove_duplicate_rectangles(rectangles):
+    unique_rectangles = []
+    seen = set()
+    for rect in rectangles:
+        rect_tuple = (rect.x1, rect.y1, rect.x2, rect.y2)
+        if rect_tuple not in seen:
+            seen.add(rect_tuple)
+            unique_rectangles.append(rect)
+    return unique_rectangles
+
+
 vertical_sides, horizontal_sides = separate_vertical_horizontal(sorted_sides)
-extension_lines = extend_reflex_lines(reflex_vertices, vertical_sides, horizontal_sides)
+extension_lines = remove_duplicate_lines(extend_reflex_lines(reflex_vertices, vertical_sides, horizontal_sides))
 print("Extension Lines:", extension_lines)
 print("Vertical Sides:", vertical_sides)
 print("Horizontal Sides:", horizontal_sides)
-plot_polygon_with_reflex_and_extensions(sorted_sides, reflex_vertices, extension_lines)
+#plot_polygon_with_reflex_and_extensions(sorted_sides, reflex_vertices, extension_lines)
+lines = sorted_sides + extension_lines
+all_vertical_lines, all_horizontal_lines = separate_vertical_horizontal(lines)
+rectangles = generate_rectangles(sorted_sides, all_vertical_lines, all_horizontal_lines, reflex_vertices)
+intersections = find_intersections(all_vertical_lines, all_horizontal_lines)
+rectangles += middle_rectangles(intersections, all_vertical_lines, all_horizontal_lines)
+rectangles = remove_duplicate_rectangles(rectangles)
+print(rectangles)
+plot_polygon_with_rectangles(sorted_sides, reflex_vertices, extension_lines, rectangles)
 
